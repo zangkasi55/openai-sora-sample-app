@@ -110,7 +110,7 @@ export async function POST(request: Request) {
         `Preferred aspect ratio: ${imageTemplate.preferredAspectRatio}`,
         `Template prompt: ${imageTemplate.prompt}`,
         hasReferenceImage
-          ? "Uploaded reference image: yes. If the image contains a person, treat it as a user-provided visual reference for fictionalized character/style design. Preserve broad styling, wardrobe, pose, palette, and mood, but do not request an exact facial identity or biometric likeness copy."
+          ? "Uploaded reference image: yes. For every selected template, include explicit instructions to send and use the uploaded reference image. If the uploaded image contains a person, instruct the image model to extract the main human subject and preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and identity from the reference image. Apply the template to the surrounding scene, layout, lighting, styling, camera, typography, and background."
           : null,
       ]
         .filter((line): line is string => Boolean(line))
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content: mode === "image"
-            ? "You are a GPT-Image-2 prompt engineer. Produce one production-ready image prompt only, no headings or bullets. Use the selected template as the primary structure. If the user provided a draft, fine-tune it into the template instead of replacing the intent. Compose natural director-style sentences in this order when relevant: style/medium, subject, environment/setting, lighting, composition, technical specs, exact text overlay wrapped in single quotes, texture or micro-details, negative constraints, and explicit aspect ratio. Front-load the most important details in the first 50 words. Keep unresolved user-editable placeholders in [BRACKETS] when no value was provided. For uploaded human reference images, phrase the prompt as fictionalized character/style reference and avoid exact facial identity or biometric likeness copying."
+            ? "You are a GPT-Image-2 prompt engineer. Produce one production-ready image prompt only, no headings or bullets. Use the selected template as the primary structure. If the user provided a draft, fine-tune it into the template instead of replacing the intent. Compose natural director-style sentences in this order when relevant: reference image usage, style/medium, subject, environment/setting, lighting, composition, technical specs, exact text overlay wrapped in single quotes, texture or micro-details, constraints, and explicit aspect ratio. Front-load the most important details in the first 50 words. Keep unresolved user-editable placeholders in [BRACKETS] when no value was provided. For uploaded human reference images, explicitly instruct the model to extract the main human subject from the uploaded image and preserve the exact real face and identity while applying the selected template to the scene and design."
             : "You are a creative director crafting production-ready prompts for the OpenAI Sora model. Respond with one prompt only. Include visual style, timing/scene beats, on-screen text when useful, camera motion, audio or voiceover direction, and reference-image instructions when the user mentions a character or uploaded image.",
         },
         {

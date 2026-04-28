@@ -14,7 +14,7 @@ const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
 const HUMAN_REFERENCE_INSTRUCTIONS =
-  "Reference image handling: the uploaded image is user-provided. If it contains a person, use it as a visual reference for general character design, pose, wardrobe, hair style, silhouette, color palette, and mood. Do not recreate an exact facial identity, biometric likeness, or private-person lookalike. Render the result as a fictionalized or stylized character/design that follows the user's creative direction.";
+  "Reference image handling: the uploaded image is user-provided. If it contains a person, first extract the main human subject from the uploaded reference image and use that extracted human as the identity reference. Preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity from the reference image. Apply the selected template only to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the person.";
 
 type ImageSize =
   | "256x256"
@@ -292,7 +292,7 @@ export async function POST(request: Request) {
     if (!result.ok || !generation) {
       const rawMessage = describeError(generation, "Failed to generate images");
       const message = image && /safety system/i.test(rawMessage)
-        ? `${rawMessage} The uploaded reference image was sent to GPT-image-2, but Azure rejected this request. Try the Human reference lookbook template or rewrite the prompt to use the person as a fictionalized character/style reference instead of an exact face or identity copy.`
+        ? `${rawMessage} The uploaded reference image was sent to GPT-image-2 with exact-human reference instructions, but Azure rejected this request. This is an Azure safety-system decision for the specific image or prompt.`
         : rawMessage;
       console.error("Image generation failed", {
         model,

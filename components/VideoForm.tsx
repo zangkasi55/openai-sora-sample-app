@@ -816,10 +816,10 @@ const VideoForm = ({
                 </p>
                 {imagePreviewUrl ? (
                   <p className="rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground">
-                    Uploaded person photos are sent to GPT-image-2 as user-provided
-                    visual references. For human images, the app phrases prompts
-                    as fictionalized character/style references rather than exact
-                    face or identity copies.
+                    Uploaded images are sent with every image template. For human
+                    images, the prompt asks GPT-image-2 to extract the person and
+                    preserve the exact face and identity while applying the selected
+                    template to the scene, styling, and layout.
                   </p>
                 ) : null}
                 <label className="flex items-start gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground">

@@ -90,11 +90,11 @@ export const IMAGE_PROMPT_TEMPLATES = [
   },
   {
     id: "hybrid-lookbook",
-    label: "Human reference lookbook",
+    label: "Exact human reference lookbook",
     category: "2hows",
-    description: "Use an uploaded person photo as character/style reference with 3D wardrobe mockups.",
+    description: "Extract the uploaded person and preserve the exact face with 3D wardrobe mockups.",
     preferredAspectRatio: "16:9",
-    prompt: `Use the uploaded person photo as a user-provided reference for general character styling, wardrobe, pose, silhouette, color palette, and overall mood. Create a fictionalized character lookbook rather than an exact facial identity copy. Keep wardrobe, footwear, and accessory items rendered as clean 3D product mockups in a lookbook layout. Maintain swatch row, label typography, and grid alignment. Studio softbox lighting, clean premium background, aspect ratio 16:9.`,
+    prompt: `Use the uploaded person photo as the primary human reference. Extract the main human subject from the uploaded image and preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and identity. Keep wardrobe, footwear, and accessory items rendered as clean 3D product mockups in a lookbook layout. Maintain swatch row, label typography, and grid alignment. Studio softbox lighting, clean premium background, aspect ratio 16:9.`,
   },
   {
     id: "thai-marketing-banner",
