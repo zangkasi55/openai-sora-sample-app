@@ -10,6 +10,7 @@ import {
   VideoRequestPayload,
 } from "@/lib/sora";
 import { buildAzureOpenAIUrl, getAzureOpenAIVideoEndpoint } from "@/lib/azure-openai";
+import { trackAiDependency, trackAiEvent, trackAiException } from "@/lib/telemetry";
 
 type VideoCreateParams = {
   prompt: string;
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
     };
 
     let response: Response;
+    const startedAt = Date.now();
     if (imageData?.data != null) {
       const formData = new FormData();
       formData.set("prompt", prompt);
@@ -121,6 +123,22 @@ export async function POST(request: Request) {
     }
 
     const result = await response.json().catch(() => null);
+    await trackAiDependency({
+      name: "sora video create",
+      target: new URL(azureEndpoint).host,
+      data: endpoint,
+      durationMs: Date.now() - startedAt,
+      success: response.ok,
+      resultCode: response.status,
+      properties: {
+        "gen_ai.operation.name": "video.generate",
+        "gen_ai.request.model": model,
+        "azure.ai.endpoint": new URL(azureEndpoint).host,
+        "azure.ai.deployment": model,
+        "azure.ai.has_reference_image": Boolean(imageData?.data),
+        "http.response.status_code": response.status,
+      },
+    });
     if (!response.ok || !result) {
       const message = describeError(result, "Failed to create video");
       const derivedStatus = result ? resolveErrorStatus(result) : undefined;
@@ -132,9 +150,21 @@ export async function POST(request: Request) {
     }
 
     const normalized = normalizeVideoResponse(result, videoPayload);
+    await trackAiEvent("video.generation.created", {
+      model,
+      size,
+      seconds,
+      hasReferenceImage: Boolean(imageData?.data),
+      status: normalized.status,
+      videoId: normalized.id,
+      success: true,
+    }, {
+      durationMs: Date.now() - startedAt,
+    });
     return Response.json(normalized);
   } catch (error) {
     console.error("generate-video error", error);
+    await trackAiException(error, { operation: "video.generate", model: videoPayload.model });
     const message = describeError(error, "Failed to create video");
     const status = resolveErrorStatus(error);
     return Response.json({ error: { message } }, { status });

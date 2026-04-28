@@ -8,6 +8,7 @@ import {
 } from "@/lib/sora";
 import { createAzureOpenAIClient, getAzureOpenAIConfig } from "@/lib/azure-openai";
 import { getImagePromptTemplate } from "@/lib/image-prompt-templates";
+import { trackAiDependency, trackAiEvent, trackAiException } from "@/lib/telemetry";
 
 // Model is determined by deployment name in Azure OpenAI
 
@@ -75,8 +76,9 @@ const fetchWikipediaContext = async (query: string): Promise<string | null> => {
 
 export async function POST(request: Request) {
   let client;
+  let config;
   try {
-    const config = getAzureOpenAIConfig();
+    config = getAzureOpenAIConfig();
     client = createAzureOpenAIClient(config);
   } catch (error) {
     const message = describeError(error, "Azure OpenAI configuration error");
@@ -142,6 +144,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const startedAt = Date.now();
     const response = await client.chat.completions.create({
       model: "", // Azure OpenAI uses deployment name instead of model
       max_tokens: mode === "image" ? 900 : 700,
@@ -159,6 +162,24 @@ export async function POST(request: Request) {
         },
       ],
     });
+    await trackAiDependency({
+      name: "prompt suggestion chat completion",
+      target: new URL(config.endpoint).host,
+      data: `${config.endpoint.replace(/\/+$/, "")}/openai/deployments/${config.deploymentName}/chat/completions`,
+      durationMs: Date.now() - startedAt,
+      success: true,
+      resultCode: 200,
+      properties: {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": config.deploymentName,
+        "azure.ai.endpoint": new URL(config.endpoint).host,
+        "azure.ai.deployment": config.deploymentName,
+        promptMode: mode,
+        imageModel,
+        hasReferenceImage,
+        webResearch,
+      },
+    });
 
     const suggestion = response.choices[0]?.message?.content?.trim();
     if (!suggestion) {
@@ -168,8 +189,22 @@ export async function POST(request: Request) {
       );
     }
 
+    await trackAiEvent("prompt.suggestion.completed", {
+      mode,
+      model: mode === "image" ? imageModel : model,
+      hasReferenceImage,
+      webResearch,
+      success: true,
+    }, {
+      durationMs: Date.now() - startedAt,
+    });
     return NextResponse.json({ prompt: suggestion });
   } catch (error) {
+    await trackAiException(error, {
+      operation: "prompt.suggestion",
+      mode,
+      model: mode === "image" ? imageModel : model,
+    });
     const message = describeError(error, "Failed to generate prompt suggestion");
     const status = resolveErrorStatus(error);
     return NextResponse.json({ error: { message } }, { status });

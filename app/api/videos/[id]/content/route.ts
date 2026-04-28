@@ -1,5 +1,6 @@
 import { describeError, resolveErrorStatus } from "@/lib/sora";
 import { buildAzureOpenAIUrl, getAzureOpenAIVideoEndpoint } from "@/lib/azure-openai";
+import { trackAiDependency, trackAiEvent, trackAiException } from "@/lib/telemetry";
 
 const asVariant = (value: string | null): "video" | "thumbnail" | "spritesheet" | undefined => {
   if (!value) return undefined;
@@ -42,9 +43,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       ...authHeaders,
     };
 
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: "GET",
       headers,
+    });
+    await trackAiDependency({
+      name: "sora video content",
+      target: new URL(azureEndpoint).host,
+      data: endpoint,
+      durationMs: Date.now() - startedAt,
+      success: response.ok,
+      resultCode: response.status,
+      properties: {
+        "gen_ai.operation.name": "video.content",
+        "gen_ai.request.model": "sora-2",
+        "azure.ai.endpoint": new URL(azureEndpoint).host,
+        "azure.ai.deployment": "sora-2",
+        videoId,
+        variant: variant ?? "video",
+        "http.response.status_code": response.status,
+      },
     });
 
     if (!response.ok) {
@@ -57,6 +76,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const contentType = response.headers.get("content-type")
       || (variant === "thumbnail" ? "image/png" : "video/mp4");
 
+    await trackAiEvent("video.content.downloaded", {
+      videoId,
+      variant: variant ?? "video",
+      contentType,
+      success: true,
+    }, {
+      durationMs: Date.now() - startedAt,
+      bytes: arrayBuffer.byteLength,
+    });
     return new Response(arrayBuffer, {
       status: 200,
       headers: {
@@ -64,6 +92,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
   } catch (error) {
+    await trackAiException(error, {
+      operation: "video.content",
+      videoId,
+      variant: variant ?? "video",
+    });
     const message = describeError(error, "Failed to fetch video content");
     const status = resolveErrorStatus(error);
     return Response.json({ error: { message } }, { status });

@@ -9,6 +9,7 @@ import {
   VideoRequestPayload,
 } from "@/lib/sora";
 import { buildAzureOpenAIUrl, getAzureOpenAIVideoEndpoint } from "@/lib/azure-openai";
+import { trackAiDependency, trackAiEvent, trackAiException } from "@/lib/telemetry";
 
 export async function POST(request: Request) {
   let videoCfg;
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
       ...authHeaders,
     };
 
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers,
@@ -71,6 +73,22 @@ export async function POST(request: Request) {
     });
 
     const result = await response.json().catch(() => null);
+    await trackAiDependency({
+      name: "sora video remix",
+      target: new URL(azureEndpoint).host,
+      data: endpoint,
+      durationMs: Date.now() - startedAt,
+      success: response.ok,
+      resultCode: response.status,
+      properties: {
+        "gen_ai.operation.name": "video.remix",
+        "gen_ai.request.model": fallback.model,
+        "azure.ai.endpoint": new URL(azureEndpoint).host,
+        "azure.ai.deployment": fallback.model,
+        videoId,
+        "http.response.status_code": response.status,
+      },
+    });
     if (!response.ok || !result) {
       const message = describeError(result, "Failed to remix video");
       const derivedStatus = result ? resolveErrorStatus(result) : undefined;
@@ -82,8 +100,24 @@ export async function POST(request: Request) {
     }
 
     const normalized = normalizeVideoResponse(result, fallback);
+    await trackAiEvent("video.remix.created", {
+      model: fallback.model,
+      size: fallback.size,
+      seconds: fallback.seconds,
+      sourceVideoId: videoId,
+      videoId: normalized.id,
+      status: normalized.status,
+      success: true,
+    }, {
+      durationMs: Date.now() - startedAt,
+    });
     return Response.json(normalized);
   } catch (error) {
+    await trackAiException(error, {
+      operation: "video.remix",
+      model: fallback.model,
+      videoId,
+    });
     const message = describeError(error, "Failed to remix video");
     const status = resolveErrorStatus(error);
     return Response.json({ error: { message } }, { status });

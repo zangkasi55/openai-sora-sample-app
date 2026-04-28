@@ -7,6 +7,7 @@ import {
   getAzureOpenAIImageConfigs,
   getAzureMAIImageConfig,
 } from "@/lib/azure-openai";
+import { trackAiDependency, trackAiEvent, trackAiException } from "@/lib/telemetry";
 
 const IMAGE_MODEL_FALLBACK = "gpt-image-2";
 const MAI_IMAGE_MODEL = "MAI-Image-2";
@@ -232,6 +233,7 @@ const generateWithGptImage = async ({
 
     for (let attempt = 0; attempt < MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT; attempt += 1) {
       let response: Response;
+      const startedAt = Date.now();
       try {
         response = await postGptImageRequest({
           endpoint,
@@ -243,6 +245,27 @@ const generateWithGptImage = async ({
           image,
         });
       } catch (error) {
+        await trackAiDependency({
+          name: image ? "gpt-image-2 edits" : "gpt-image-2 generations",
+          target: new URL(config.endpoint).host,
+          data: endpoint,
+          durationMs: Date.now() - startedAt,
+          success: false,
+          resultCode: 504,
+          properties: {
+            "gen_ai.operation.name": image ? "image.edit" : "image.generate",
+            "gen_ai.request.model": config.deploymentName,
+            "azure.ai.endpoint": new URL(config.endpoint).host,
+            "azure.ai.deployment": config.deploymentName,
+            "azure.ai.has_reference_image": Boolean(image),
+            "azure.ai.attempt": attempt + 1,
+          },
+        });
+        await trackAiException(error, {
+          operation: image ? "gpt-image-2 edits" : "gpt-image-2 generations",
+          deployment: config.deploymentName,
+          endpointHost: new URL(config.endpoint).host,
+        });
         lastGeneration = {
           data: [],
         };
@@ -258,6 +281,23 @@ const generateWithGptImage = async ({
       const generation = (await response.json().catch(() => null)) as
         | ImageGenerationResponse
         | null;
+      await trackAiDependency({
+        name: image ? "gpt-image-2 edits" : "gpt-image-2 generations",
+        target: new URL(config.endpoint).host,
+        data: endpoint,
+        durationMs: Date.now() - startedAt,
+        success: response.ok,
+        resultCode: response.status,
+        properties: {
+          "gen_ai.operation.name": image ? "image.edit" : "image.generate",
+          "gen_ai.request.model": config.deploymentName,
+          "azure.ai.endpoint": new URL(config.endpoint).host,
+          "azure.ai.deployment": config.deploymentName,
+          "azure.ai.has_reference_image": Boolean(image),
+          "azure.ai.attempt": attempt + 1,
+          "http.response.status_code": response.status,
+        },
+      });
 
       if (response.ok && generation) {
         console.log("Image generation succeeded", {
@@ -309,6 +349,7 @@ const generateWithMaiImage = async ({
   const generations: ImageGenerationResponse[] = [];
 
   for (let index = 0; index < count; index += 1) {
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -325,6 +366,22 @@ const generateWithMaiImage = async ({
     const generation = (await response.json().catch(() => null)) as
       | ImageGenerationResponse
       | null;
+    await trackAiDependency({
+      name: "MAI image generations",
+      target: new URL(config.endpoint).host,
+      data: endpoint,
+      durationMs: Date.now() - startedAt,
+      success: response.ok,
+      resultCode: response.status,
+      properties: {
+        "gen_ai.operation.name": "image.generate",
+        "gen_ai.request.model": config.deploymentName,
+        "azure.ai.endpoint": new URL(config.endpoint).host,
+        "azure.ai.deployment": config.deploymentName,
+        "azure.ai.image_index": index,
+        "http.response.status_code": response.status,
+      },
+    });
     if (!response.ok || !generation) {
       return { generation, ok: response.ok, status: response.status };
     }
@@ -377,6 +434,7 @@ export async function POST(request: Request) {
       count,
       hasReferenceImage: Boolean(image),
     });
+    const requestStartedAt = Date.now();
 
     const result = model === MAI_IMAGE_MODEL
       ? await generateWithMaiImage({ prompt, size, count })
@@ -392,6 +450,16 @@ export async function POST(request: Request) {
         model,
         status: result.status,
         message,
+      });
+      await trackAiEvent("image.generation.completed", {
+        model,
+        size,
+        count,
+        hasReferenceImage: Boolean(image),
+        success: false,
+        status: result.status,
+      }, {
+        durationMs: Date.now() - requestStartedAt,
       });
       const derivedStatus = generation ? resolveErrorStatus(generation) : undefined;
       const status =
@@ -422,9 +490,21 @@ export async function POST(request: Request) {
       },
       [],
     );
+    await trackAiEvent("image.generation.completed", {
+      model,
+      size,
+      count,
+      hasReferenceImage: Boolean(image),
+      success: true,
+      status: result.status,
+      producedImages: suggestions.length,
+    }, {
+      durationMs: Date.now() - requestStartedAt,
+    });
 
     return NextResponse.json({ images: suggestions });
   } catch (error) {
+    await trackAiException(error, { operation: "image.generation", model });
     const message = describeError(error, "Failed to generate images");
     const status = resolveErrorStatus(error);
     return NextResponse.json({ error: { message } }, { status });

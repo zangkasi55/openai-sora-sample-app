@@ -9,6 +9,7 @@ import {
   VideoRequestPayload,
 } from "@/lib/sora";
 import { buildAzureOpenAIUrl, getAzureOpenAIVideoEndpoint } from "@/lib/azure-openai";
+import { trackAiDependency, trackAiEvent, trackAiException } from "@/lib/telemetry";
 
 export async function GET(
   _request: Request,
@@ -44,12 +45,29 @@ export async function GET(
       ...authHeaders,
     };
 
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: "GET",
       headers,
     });
 
     const video = await response.json().catch(() => null);
+    await trackAiDependency({
+      name: "sora video status",
+      target: new URL(azureEndpoint).host,
+      data: endpoint,
+      durationMs: Date.now() - startedAt,
+      success: response.ok,
+      resultCode: response.status,
+      properties: {
+        "gen_ai.operation.name": "video.status",
+        "gen_ai.request.model": "sora-2",
+        "azure.ai.endpoint": new URL(azureEndpoint).host,
+        "azure.ai.deployment": "sora-2",
+        videoId,
+        "http.response.status_code": response.status,
+      },
+    });
     if (!response.ok || !video) {
       const message = describeError(video, "Failed to fetch video");
       const derivedStatus = video ? resolveErrorStatus(video) : undefined;
@@ -83,8 +101,17 @@ export async function GET(
     };
 
     const normalized = normalizeVideoResponse(video, fallback);
+    await trackAiEvent("video.status.checked", {
+      model: normalized.model,
+      videoId: normalized.id,
+      status: normalized.status,
+      success: true,
+    }, {
+      durationMs: Date.now() - startedAt,
+    });
     return Response.json(normalized);
   } catch (error) {
+    await trackAiException(error, { operation: "video.status", videoId });
     const message = describeError(error, "Failed to fetch video");
     const status = resolveErrorStatus(error);
     return Response.json({ error: { message } }, { status });
