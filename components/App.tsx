@@ -797,6 +797,7 @@ export default function App() {
         imageModel: resolvedImageModel,
         imageSize: resolvedImageSize,
         webResearch: imageWebResearch,
+        hasReferenceImage: Boolean(imageFile),
       });
 
       const trimmed = suggestion.trim();
@@ -824,6 +825,7 @@ export default function App() {
     resolvedImageModel,
     resolvedImageSize,
     imageWebResearch,
+    imageFile,
     seconds,
     setCurrentTitle,
     setGeneratedImageError,

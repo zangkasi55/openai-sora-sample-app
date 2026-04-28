@@ -305,7 +305,7 @@ const VideoForm = ({
 
   const modelCapability = imageModel === "MAI-Image-2"
     ? "MAI-Image-2 creates one PNG per request for photorealistic product, marketing, and brand visuals. Width and height stay within the 1024x1024 pixel budget."
-    : "GPT-image-2 supports high-resolution natural-language image generation with flexible aspect ratios and strong instruction following.";
+    : "GPT-image-2 supports high-resolution natural-language image generation, uploaded reference images, flexible aspect ratios, and strong instruction following.";
 
   const handleGeneratePromptClick = () => {
     if (!onGeneratePrompt) return;
@@ -814,6 +814,14 @@ const VideoForm = ({
                   subject, environment, lighting, composition, technical specs,
                   exact text handling, micro-details, and aspect ratio.
                 </p>
+                {imagePreviewUrl ? (
+                  <p className="rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground">
+                    Uploaded person photos are sent to GPT-image-2 as user-provided
+                    visual references. For human images, the app phrases prompts
+                    as fictionalized character/style references rather than exact
+                    face or identity copies.
+                  </p>
+                ) : null}
                 <label className="flex items-start gap-2 rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"

@@ -208,6 +208,7 @@ export interface SuggestPromptRequest {
   imageModel?: string;
   imageSize?: string;
   webResearch?: boolean;
+  hasReferenceImage?: boolean;
 }
 
 export interface SuggestPromptResponse {

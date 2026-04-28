@@ -13,6 +13,8 @@ const MAI_IMAGE_MODEL = "MAI-Image-2";
 const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
+const HUMAN_REFERENCE_INSTRUCTIONS =
+  "Reference image handling: the uploaded image is user-provided. If it contains a person, use it as a visual reference for general character design, pose, wardrobe, hair style, silhouette, color palette, and mood. Do not recreate an exact facial identity, biometric likeness, or private-person lookalike. Render the result as a fictionalized or stylized character/design that follows the user's creative direction.";
 
 type ImageSize =
   | "256x256"
@@ -146,6 +148,9 @@ const generateWithGptImage = async ({
   image: ImageInputPayload | null;
 }): Promise<{ generation: ImageGenerationResponse | null; status: number; ok: boolean }> => {
   const config = getAzureOpenAIImageConfig();
+  const effectivePrompt = image
+    ? `${prompt}\n\n${HUMAN_REFERENCE_INSTRUCTIONS}`
+    : prompt;
   const basePath = `/openai/deployments/${encodeURIComponent(config.deploymentName)}/images`;
   const endpoint = buildAzureOpenAIUrl(
     config.endpoint,
@@ -164,7 +169,7 @@ const generateWithGptImage = async ({
             type: image.mimeType || "image/png",
           });
           form.set("image", imageBlob, image.name || "reference-image.png");
-          form.set("prompt", prompt);
+          form.set("prompt", effectivePrompt);
           form.set("n", String(count));
           form.set("quality", "medium");
           form.set("size", size);
@@ -181,7 +186,7 @@ const generateWithGptImage = async ({
           model,
           n: count,
           output_format: "png",
-          prompt,
+          prompt: effectivePrompt,
           quality: "medium",
           size,
         }),
@@ -285,7 +290,10 @@ export async function POST(request: Request) {
 
     const { generation } = result;
     if (!result.ok || !generation) {
-      const message = describeError(generation, "Failed to generate images");
+      const rawMessage = describeError(generation, "Failed to generate images");
+      const message = image && /safety system/i.test(rawMessage)
+        ? `${rawMessage} The uploaded reference image was sent to GPT-image-2, but Azure rejected this request. Try the Human reference lookbook template or rewrite the prompt to use the person as a fictionalized character/style reference instead of an exact face or identity copy.`
+        : rawMessage;
       console.error("Image generation failed", {
         model,
         status: result.status,
