@@ -4,7 +4,7 @@ import { describeError, resolveErrorStatus } from "@/lib/sora";
 import {
   buildAzureOpenAIUrl,
   getAzureOpenAIAuthHeaders,
-  getAzureOpenAIImageConfig,
+  getAzureOpenAIImageConfigs,
   getAzureMAIImageConfig,
 } from "@/lib/azure-openai";
 
@@ -13,6 +13,7 @@ const MAI_IMAGE_MODEL = "MAI-Image-2";
 const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
+const MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT = 2;
 const EXACT_REFERENCE_INSTRUCTIONS =
   "Reference image handling: the uploaded image is user-provided. First extract the primary subject or subjects from the uploaded reference image, including any human, animal, product, object, logo, prop, vehicle, clothing, scene element, color palette, texture, markings, proportions, and spatial relationships. Preserve the exact reference subject identity and details. For a human subject, preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity. For non-human subjects, preserve the exact shape, material, color, texture, markings, labels, geometry, scale, and distinctive features. Apply the selected template to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the reference subject.";
 
@@ -134,68 +135,136 @@ const parseDimensions = (size: ImageSize): { width: number; height: number } => 
   return { width, height };
 };
 
-const generateWithGptImage = async ({
+const sleep = (delayMs: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, delayMs));
+
+const isRetryableImageStatus = (status: number): boolean =>
+  status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+
+const getRetryDelayMs = (attempt: number, response: Response): number => {
+  const retryAfter = response.headers.get("retry-after");
+  const retryAfterSeconds = retryAfter ? Number(retryAfter) : NaN;
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.min(30_000, retryAfterSeconds * 1000);
+  }
+  return attempt === 0 ? 3_000 : 8_000;
+};
+
+const postGptImageRequest = async ({
+  endpoint,
+  authHeaders,
   prompt,
   size,
   count,
   model,
   image,
 }: {
+  endpoint: string;
+  authHeaders: Record<string, string>;
   prompt: string;
   size: ImageSize;
   count: number;
   model: string;
   image: ImageInputPayload | null;
+}): Promise<Response> => image
+  ? fetch(endpoint, {
+      method: "POST",
+      headers: authHeaders,
+      body: (() => {
+        const form = new FormData();
+        const imageBuffer = Buffer.from(image.data, "base64");
+        const imageBlob = new Blob([imageBuffer], {
+          type: image.mimeType || "image/png",
+        });
+        form.set("image", imageBlob, image.name || "reference-image.png");
+        form.set("prompt", prompt);
+        form.set("n", String(count));
+        form.set("quality", "high");
+        form.set("size", size);
+        return form;
+      })(),
+    })
+  : fetch(endpoint, {
+      method: "POST",
+      headers: {
+        ...authHeaders,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        n: count,
+        output_format: "png",
+        prompt,
+        quality: "medium",
+        size,
+      }),
+    });
+
+const generateWithGptImage = async ({
+  prompt,
+  size,
+  count,
+  image,
+}: {
+  prompt: string;
+  size: ImageSize;
+  count: number;
+  image: ImageInputPayload | null;
 }): Promise<{ generation: ImageGenerationResponse | null; status: number; ok: boolean }> => {
-  const config = getAzureOpenAIImageConfig();
   const effectivePrompt = image
     ? `${prompt}\n\n${EXACT_REFERENCE_INSTRUCTIONS}`
     : prompt;
-  const basePath = `/openai/deployments/${encodeURIComponent(config.deploymentName)}/images`;
-  const endpoint = buildAzureOpenAIUrl(
-    config.endpoint,
-    `${basePath}/${image ? "edits" : "generations"}`,
-    config.apiVersion ?? "2025-04-01-preview",
-  );
-  const authHeaders = await getAzureOpenAIAuthHeaders(config.apiKey);
-  const response = image
-    ? await fetch(endpoint, {
-        method: "POST",
-        headers: authHeaders,
-        body: (() => {
-          const form = new FormData();
-          const imageBuffer = Buffer.from(image.data, "base64");
-          const imageBlob = new Blob([imageBuffer], {
-            type: image.mimeType || "image/png",
-          });
-          form.set("image", imageBlob, image.name || "reference-image.png");
-          form.set("prompt", effectivePrompt);
-          form.set("n", String(count));
-          form.set("quality", "medium");
-          form.set("size", size);
-          return form;
-        })(),
-      })
-    : await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          ...authHeaders,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          n: count,
-          output_format: "png",
-          prompt: effectivePrompt,
-          quality: "medium",
-          size,
-        }),
+  const configs = getAzureOpenAIImageConfigs();
+  let lastGeneration: ImageGenerationResponse | null = null;
+  let lastStatus = 500;
+
+  for (const config of configs) {
+    const basePath = `/openai/deployments/${encodeURIComponent(config.deploymentName)}/images`;
+    const endpoint = buildAzureOpenAIUrl(
+      config.endpoint,
+      `${basePath}/${image ? "edits" : "generations"}`,
+      config.apiVersion ?? "2025-04-01-preview",
+    );
+    const authHeaders = await getAzureOpenAIAuthHeaders(config.apiKey);
+
+    for (let attempt = 0; attempt < MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT; attempt += 1) {
+      const response = await postGptImageRequest({
+        endpoint,
+        authHeaders,
+        prompt: effectivePrompt,
+        size,
+        count,
+        model: config.deploymentName,
+        image,
       });
+      const generation = (await response.json().catch(() => null)) as
+        | ImageGenerationResponse
+        | null;
+
+      if (response.ok && generation) {
+        console.log("Image generation succeeded", {
+          deployment: config.deploymentName,
+          endpointHost: new URL(config.endpoint).host,
+          hasReferenceImage: Boolean(image),
+        });
+        return { generation, ok: true, status: response.status };
+      }
+
+      lastGeneration = generation;
+      lastStatus = response.status;
+      if (!isRetryableImageStatus(response.status)) {
+        break;
+      }
+      if (attempt < MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT - 1) {
+        await sleep(getRetryDelayMs(attempt, response));
+      }
+    }
+  }
 
   return {
-    generation: (await response.json().catch(() => null)) as ImageGenerationResponse | null,
-    ok: response.ok,
-    status: response.status,
+    generation: lastGeneration,
+    ok: false,
+    status: lastStatus,
   };
 };
 
@@ -260,9 +329,9 @@ export async function POST(request: Request) {
   }
 
   const size = coerceImageSize(rawPayload.size);
-  const count = coerceImageCount(rawPayload.count);
-  const model = coerceImageModel(rawPayload.model);
   const image = readImageInput(rawPayload.image);
+  const count = image ? 1 : coerceImageCount(rawPayload.count);
+  const model = coerceImageModel(rawPayload.model);
 
   try {
     if (image && model === MAI_IMAGE_MODEL) {
@@ -286,7 +355,7 @@ export async function POST(request: Request) {
 
     const result = model === MAI_IMAGE_MODEL
       ? await generateWithMaiImage({ prompt, size, count })
-      : await generateWithGptImage({ prompt, size, count, model, image });
+      : await generateWithGptImage({ prompt, size, count, image });
 
     const { generation } = result;
     if (!result.ok || !generation) {
