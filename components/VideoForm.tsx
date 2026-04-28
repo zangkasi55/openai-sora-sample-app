@@ -818,7 +818,10 @@ const VideoForm = ({
                   <p className="rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-xs text-muted-foreground">
                     Uploaded images are sent with every image template. For human
                     images, the prompt asks GPT-image-2 to extract the person and
-                    preserve the exact face and identity while applying the selected
+                    preserve the exact face and identity. For objects, products,
+                    logos, animals, props, vehicles, clothing, and scene elements,
+                    it asks the model to preserve exact shapes, materials, colors,
+                    markings, and distinctive details while applying the selected
                     template to the scene, styling, and layout.
                   </p>
                 ) : null}

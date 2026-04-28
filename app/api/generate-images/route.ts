@@ -13,8 +13,8 @@ const MAI_IMAGE_MODEL = "MAI-Image-2";
 const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
-const HUMAN_REFERENCE_INSTRUCTIONS =
-  "Reference image handling: the uploaded image is user-provided. If it contains a person, first extract the main human subject from the uploaded reference image and use that extracted human as the identity reference. Preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity from the reference image. Apply the selected template only to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the person.";
+const EXACT_REFERENCE_INSTRUCTIONS =
+  "Reference image handling: the uploaded image is user-provided. First extract the primary subject or subjects from the uploaded reference image, including any human, animal, product, object, logo, prop, vehicle, clothing, scene element, color palette, texture, markings, proportions, and spatial relationships. Preserve the exact reference subject identity and details. For a human subject, preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity. For non-human subjects, preserve the exact shape, material, color, texture, markings, labels, geometry, scale, and distinctive features. Apply the selected template to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the reference subject.";
 
 type ImageSize =
   | "256x256"
@@ -149,7 +149,7 @@ const generateWithGptImage = async ({
 }): Promise<{ generation: ImageGenerationResponse | null; status: number; ok: boolean }> => {
   const config = getAzureOpenAIImageConfig();
   const effectivePrompt = image
-    ? `${prompt}\n\n${HUMAN_REFERENCE_INSTRUCTIONS}`
+    ? `${prompt}\n\n${EXACT_REFERENCE_INSTRUCTIONS}`
     : prompt;
   const basePath = `/openai/deployments/${encodeURIComponent(config.deploymentName)}/images`;
   const endpoint = buildAzureOpenAIUrl(
@@ -292,7 +292,7 @@ export async function POST(request: Request) {
     if (!result.ok || !generation) {
       const rawMessage = describeError(generation, "Failed to generate images");
       const message = image && /safety system/i.test(rawMessage)
-        ? `${rawMessage} The uploaded reference image was sent to GPT-image-2 with exact-human reference instructions, but Azure rejected this request. This is an Azure safety-system decision for the specific image or prompt.`
+        ? `${rawMessage} The uploaded reference image was sent to GPT-image-2 with exact reference-subject preservation instructions, but Azure rejected this request. This is an Azure safety-system decision for the specific image or prompt.`
         : rawMessage;
       console.error("Image generation failed", {
         model,
