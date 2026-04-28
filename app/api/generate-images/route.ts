@@ -13,7 +13,7 @@ const MAI_IMAGE_MODEL = "MAI-Image-2";
 const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
-const MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT = 2;
+const MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT = 1;
 const EXACT_REFERENCE_INSTRUCTIONS =
   "Reference image handling: the uploaded image is user-provided. First extract the primary subject or subjects from the uploaded reference image, including any human, animal, product, object, logo, prop, vehicle, clothing, scene element, color palette, texture, markings, proportions, and spatial relationships. Preserve the exact reference subject identity and details. For a human subject, preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity. For non-human subjects, preserve the exact shape, material, color, texture, markings, labels, geometry, scale, and distinctive features. Apply the selected template to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the reference subject.";
 
@@ -252,6 +252,13 @@ const generateWithGptImage = async ({
 
       lastGeneration = generation;
       lastStatus = response.status;
+      console.warn("Image generation attempt failed", {
+        deployment: config.deploymentName,
+        endpointHost: new URL(config.endpoint).host,
+        status: response.status,
+        hasReferenceImage: Boolean(image),
+        retryable: isRetryableImageStatus(response.status),
+      });
       if (!isRetryableImageStatus(response.status)) {
         break;
       }

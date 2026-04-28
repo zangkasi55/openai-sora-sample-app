@@ -215,6 +215,17 @@ export function getAzureOpenAIImageConfig(): AzureOpenAIConfig {
 export function getAzureOpenAIImageConfigs(): AzureOpenAIConfig[] {
   const primary = getAzureOpenAIImageConfig();
   const base = readBaseEnv();
+  const configs: AzureOpenAIConfig[] = [primary];
+  const addConfig = (config: AzureOpenAIConfig) => {
+    const exists = configs.some((existing) =>
+      trimTrailingSlash(existing.endpoint) === trimTrailingSlash(config.endpoint) &&
+      existing.deploymentName === config.deploymentName
+    );
+    if (!exists) {
+      configs.push(config);
+    }
+  };
+
   const fallbackEndpoint =
     process.env.AZURE_OPENAI_IMAGE_FALLBACK_ENDPOINT?.trim() ||
     base.endpoint;
@@ -228,22 +239,14 @@ export function getAzureOpenAIImageConfigs(): AzureOpenAIConfig[] {
     process.env.AZURE_OPENAI_IMAGE_FALLBACK_API_KEY?.trim() ||
     base.apiKey;
 
-  if (
-    trimTrailingSlash(fallbackEndpoint) === trimTrailingSlash(primary.endpoint) &&
-    fallbackDeploymentName === primary.deploymentName
-  ) {
-    return [primary];
-  }
+  addConfig({
+    endpoint: fallbackEndpoint,
+    apiKey: fallbackApiKey,
+    deploymentName: fallbackDeploymentName,
+    apiVersion: fallbackApiVersion,
+  });
 
-  return [
-    primary,
-    {
-      endpoint: fallbackEndpoint,
-      apiKey: fallbackApiKey,
-      deploymentName: fallbackDeploymentName,
-      apiVersion: fallbackApiVersion,
-    },
-  ];
+  return configs;
 }
 
 export function getAzureMAIImageConfig(): AzureOpenAIConfig {
