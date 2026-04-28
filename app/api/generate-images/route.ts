@@ -14,6 +14,7 @@ const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
 const MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT = 1;
+const GPT_IMAGE_REQUEST_TIMEOUT_MS = 90_000;
 const EXACT_REFERENCE_INSTRUCTIONS =
   "Reference image handling: the uploaded image is user-provided. First extract the primary subject or subjects from the uploaded reference image, including any human, animal, product, object, logo, prop, vehicle, clothing, scene element, color palette, texture, markings, proportions, and spatial relationships. Preserve the exact reference subject identity and details. For a human subject, preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity. For non-human subjects, preserve the exact shape, material, color, texture, markings, labels, geometry, scale, and distinctive features. Apply the selected template to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the reference subject.";
 
@@ -170,6 +171,7 @@ const postGptImageRequest = async ({
   ? fetch(endpoint, {
       method: "POST",
       headers: authHeaders,
+      signal: AbortSignal.timeout(GPT_IMAGE_REQUEST_TIMEOUT_MS),
       body: (() => {
         const form = new FormData();
         const imageBuffer = Buffer.from(image.data, "base64");
@@ -179,13 +181,14 @@ const postGptImageRequest = async ({
         form.set("image", imageBlob, image.name || "reference-image.png");
         form.set("prompt", prompt);
         form.set("n", String(count));
-        form.set("quality", "high");
+        form.set("quality", "medium");
         form.set("size", size);
         return form;
       })(),
     })
   : fetch(endpoint, {
       method: "POST",
+      signal: AbortSignal.timeout(GPT_IMAGE_REQUEST_TIMEOUT_MS),
       headers: {
         ...authHeaders,
         "Content-Type": "application/json",
@@ -228,15 +231,30 @@ const generateWithGptImage = async ({
     const authHeaders = await getAzureOpenAIAuthHeaders(config.apiKey);
 
     for (let attempt = 0; attempt < MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT; attempt += 1) {
-      const response = await postGptImageRequest({
-        endpoint,
-        authHeaders,
-        prompt: effectivePrompt,
-        size,
-        count,
-        model: config.deploymentName,
-        image,
-      });
+      let response: Response;
+      try {
+        response = await postGptImageRequest({
+          endpoint,
+          authHeaders,
+          prompt: effectivePrompt,
+          size,
+          count,
+          model: config.deploymentName,
+          image,
+        });
+      } catch (error) {
+        lastGeneration = {
+          data: [],
+        };
+        lastStatus = 504;
+        console.warn("Image generation attempt timed out", {
+          deployment: config.deploymentName,
+          endpointHost: new URL(config.endpoint).host,
+          hasReferenceImage: Boolean(image),
+          message: error instanceof Error ? error.message : "Request timed out",
+        });
+        break;
+      }
       const generation = (await response.json().catch(() => null)) as
         | ImageGenerationResponse
         | null;
