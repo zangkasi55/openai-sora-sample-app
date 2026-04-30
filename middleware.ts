@@ -1,6 +1,5 @@
 // Middleware to protect the API routes
 import { NextRequest, NextResponse } from "next/server";
-import { AUTH_COOKIE_NAME, isValidAuthToken } from "@/lib/auth";
 
 const getAllowedOrigins = (): Set<string> => {
   const s = new Set<string>();
@@ -21,50 +20,14 @@ const getAllowedOrigins = (): Set<string> => {
 
 const ALLOWED_FROM_ENV = getAllowedOrigins();
 
-const PUBLIC_PATHS = new Set([
-  "/login",
-  "/api/login",
-  "/favicon.ico",
-  "/sora-2.png",
-]);
-
-const isPublicPath = (pathname: string): boolean =>
-  PUBLIC_PATHS.has(pathname)
-  || pathname.startsWith("/_next/")
-  || /\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt)$/i.test(pathname);
-
-export async function middleware(req: NextRequest) {
-  const pathname = req.nextUrl.pathname;
-
+export function middleware(req: NextRequest) {
+  if (!req.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
+ 
   // Let OPTIONS preflights pass
   if (req.method === "OPTIONS") return new NextResponse(null, { status: 204 });
-
-  const isAuthenticated = await isValidAuthToken(
-    req.cookies.get(AUTH_COOKIE_NAME)?.value,
-  );
-
-  if (!isAuthenticated && !isPublicPath(pathname)) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { error: { message: "Authentication required" } },
-        { status: 401 },
-      );
-    }
-
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.search = "";
-    return NextResponse.redirect(loginUrl);
-  }
-
-  if (isAuthenticated && pathname === "/login") {
-    const homeUrl = req.nextUrl.clone();
-    homeUrl.pathname = "/";
-    homeUrl.search = "";
-    return NextResponse.redirect(homeUrl);
-  }
-
-  if (!pathname.startsWith("/api/")) return NextResponse.next();
+ 
+  // Allow root path without origin checks (optional)
+  if (req.nextUrl.pathname === "/") return NextResponse.next();
 
   // Get the incoming Origin header (may be null for same-origin navigations)
   const incomingOrigin = req.headers.get("origin");
@@ -129,5 +92,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image).*)"],
+  matcher: ["/api/:path*"],
 };

@@ -8,20 +8,25 @@ This repository is a fork of [openai/openai-sora-sample-app](https://github.com/
 ![NextJS](https://img.shields.io/badge/Built_with-NextJS-blue)
 ![Sora Video API](https://img.shields.io/badge/Powered_by-Sora_Video_API-orange)
 
-This repository contains a NextJS sample app built on top of the [Sora Video API](https://platform.openai.com/docs/guides/video-generation) and OpenAI SDK.
-It provides a simple UI for experimentation, using text prompts and optionally image inputs to generate and remix videos.
+This repository contains a NextJS sample app built on top of Azure OpenAI Sora, GPT-image-2, and MAI-Image-2 deployments hosted in New Microsoft Foundry resources.
+It provides a UI for experimentation, using text prompts and optionally image inputs to generate images, generate videos, and remix videos.
 
 ![Sora demo visual](./public/sora-demo-visual.jpg)
 
 Features:
 
-- Generate new videos or remix existing runs through the `/videos` endpoints.
+- Generate new videos or remix existing runs through Azure OpenAI Sora endpoints.
 - Queue multiple variations in one click with **Versions Count** and follow progress via automatic polling.
 - Auto-title runs so finished clips stay recognizable.
-- Automatically optimize prompts.
-- Generate starter imagery with `gpt-image-1` to use as image inputs.
+- Automatically optimize prompts for video and image generation.
+- Generate images with GPT-image-2 or MAI-Image-2.
+- Send uploaded reference images to GPT-image-2 image edits for new image creation.
+- Use GPT-image-2 prompt templates to prefill and fine-tune prompts.
 - Preview, download, remix, or retry completed runs directly from the history panel.
 - Persist preferences and run history in `localStorage` so refreshes do not wipe context.
+- Emit application telemetry to Application Insights and Azure Monitor.
+
+See [docs/project-spec.md](docs/project-spec.md) for the detailed architecture, model routing, Azure resources, monitoring design, and diagrams.
 
 This app is meant to be used as a starting point to build Sora-powered video experiences that you can customize to your needs.
 
@@ -71,7 +76,7 @@ This sample app highlights common Sora workflows and wraps each one in a small U
 
 ### Generate new videos
 
-- Fill in your prompt, choose a Sora model (`sora-2` or `sora-2-pro`), aspect ratio, and duration (4s, 8s, or 12s).
+- Fill in your prompt, choose `sora-2`, aspect ratio, and duration (4s, 8s, or 12s).
 - Optionally upload an image; the app crops it to the chosen aspect ratio before sending it along as `input_reference`.
 - Submit one or many variations at once via **Versions Count**. The sidebar polls `/videos/{id}` until each job completes.
 
@@ -84,10 +89,11 @@ This sample app highlights common Sora workflows and wraps each one in a small U
 
 Use **Generate prompt** to call the Responses API to optimize your prompt for the selected model, size, and duration.
 
-### Image ideation
+### Image generation
 
-- Let `gpt-image-1` propose stills aligned with your prompt. Choose the one you like and send it as the next `input_reference`.
-- Swap between generated and uploaded imagery without losing form state.
+- Use the Image tab to generate images with GPT-image-2 or MAI-Image-2.
+- Attach a reference image to use GPT-image-2 edits and preserve the uploaded subject in a newly generated image.
+- Preview, download, or reuse generated images as references.
 
 ### Run management
 
@@ -99,7 +105,7 @@ Use **Generate prompt** to call the Responses API to optimize your prompt for th
 ### Try a fresh generation
 
 - Enter a descriptive prompt such as `A sweeping drone shot over neon-drenched Kyoto at night`.
-- Select `sora-2-pro`, set duration to 8 seconds, and bump **Versions Count** to 3.
+- Select `sora-2`, set duration to 8 seconds, and bump **Versions Count** to 3.
 - Click **Generate**. Watch each run stream through queued → processing → completed states, then preview the outputs inline.
 
 ### Try a remix
