@@ -15,7 +15,7 @@ const ALLOWED_IMAGE_MODELS = new Set<string>(["gpt-image-2", MAI_IMAGE_MODEL]);
 const MAX_IMAGE_COUNT = 4;
 const DEFAULT_IMAGE_COUNT = 3;
 const MAX_GPT_IMAGE_ATTEMPTS_PER_DEPLOYMENT = 1;
-const GPT_IMAGE_REQUEST_TIMEOUT_MS = 90_000;
+const GPT_IMAGE_REQUEST_TIMEOUT_MS = 120_000;
 const EXACT_REFERENCE_INSTRUCTIONS =
   "Reference image handling: the uploaded image is user-provided. First extract the primary subject or subjects from the uploaded reference image, including any human, animal, product, object, logo, prop, vehicle, clothing, scene element, color palette, texture, markings, proportions, and spatial relationships. Preserve the exact reference subject identity and details. For a human subject, preserve the exact real face, facial structure, expression, hairstyle, skin tone, age cues, wardrobe details, pose, silhouette, and overall identity. For non-human subjects, preserve the exact shape, material, color, texture, markings, labels, geometry, scale, and distinctive features. Apply the selected template to the background, layout, styling, lighting, camera, typography, and scene design unless the user explicitly asks to change the reference subject.";
 
@@ -33,6 +33,16 @@ type ImageSize =
   | "1792x1024";
 
 const DEFAULT_IMAGE_SIZE: ImageSize = "1024x1024";
+const GPT_IMAGE_SIZES = new Set<ImageSize>([
+  "1024x1024",
+  "1024x1536",
+  "1536x1024",
+]);
+const MAI_IMAGE_SIZES = new Set<ImageSize>([
+  "1024x1024",
+  "1365x768",
+  "768x1365",
+]);
 const ALLOWED_IMAGE_SIZES = new Set<ImageSize>([
   "256x256",
   "512x512",
@@ -125,6 +135,14 @@ const coerceImageSize = (value: unknown): ImageSize => {
     return candidate as ImageSize;
   }
   return DEFAULT_IMAGE_SIZE;
+};
+
+const coerceImageSizeForModel = (value: unknown, model: string): ImageSize => {
+  const size = coerceImageSize(value);
+  if (model === MAI_IMAGE_MODEL) {
+    return MAI_IMAGE_SIZES.has(size) ? size : DEFAULT_IMAGE_SIZE;
+  }
+  return GPT_IMAGE_SIZES.has(size) ? size : DEFAULT_IMAGE_SIZE;
 };
 
 const parseDimensions = (size: ImageSize): { width: number; height: number } => {
@@ -410,10 +428,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const size = coerceImageSize(rawPayload.size);
   const image = readImageInput(rawPayload.image);
-  const count = image ? 1 : coerceImageCount(rawPayload.count);
   const model = coerceImageModel(rawPayload.model);
+  const size = coerceImageSizeForModel(rawPayload.size, model);
+  const count = image || model === IMAGE_MODEL_FALLBACK
+    ? 1
+    : coerceImageCount(rawPayload.count);
 
   try {
     if (image && model === MAI_IMAGE_MODEL) {

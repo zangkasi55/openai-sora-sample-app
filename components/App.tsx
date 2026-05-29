@@ -65,7 +65,7 @@ const IMAGE_MODEL_OPTIONS: readonly ImageGenerationModel[] = [
   "MAI-Image-2",
 ];
 const IMAGE_SIZE_OPTIONS: Record<ImageGenerationModel, readonly string[]> = {
-  "gpt-image-2": ["1024x1024", "1440x1024", "1024x1440"],
+  "gpt-image-2": ["1024x1024", "1536x1024", "1024x1536"],
   "MAI-Image-2": ["1024x1024", "1365x768", "768x1365"],
 };
 
@@ -658,7 +658,7 @@ export default function App() {
     setSelectedGeneratedImageId(null);
 
     try {
-      const normalizedCount = Math.max(
+      const requestedCount = Math.max(
         1,
         Math.min(
           4,
@@ -667,6 +667,9 @@ export default function App() {
       );
 
       const effectiveImageModel = imageFile ? "gpt-image-2" : resolvedImageModel;
+      const normalizedCount = effectiveImageModel === "gpt-image-2"
+        ? 1
+        : requestedCount;
       const effectiveImageSize = imageFile
         ? sanitizeImageSize(resolvedImageSize, "gpt-image-2")
         : resolvedImageSize;

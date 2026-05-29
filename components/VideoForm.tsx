@@ -341,10 +341,10 @@ const VideoForm = ({
 
     switch (selectedImagePromptTemplate.preferredAspectRatio) {
       case "16:9":
-        return "1440x1024";
+        return "1536x1024";
       case "9:16":
       case "3:4":
-        return "1024x1440";
+        return "1024x1536";
       default:
         return "1024x1024";
     }
